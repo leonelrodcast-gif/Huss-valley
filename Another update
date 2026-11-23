@@ -1,0 +1,35 @@
+function dibujarDino(){
+  let x=0, y=290;
+
+  ctx.fillStyle="#ff7900";
+
+  // Cola
+  ctx.beginPath();
+  ctx.moveTo(x+30,y+35);
+  ctx.lineTo(x,y+20);
+  ctx.lineTo(x+28,y+52);
+  ctx.fill();
+
+  // Cuerpo
+  ctx.fillRect(x+25,y+20,60,40);
+
+  // Cuello y cabeza
+  ctx.fillRect(x+65,y,24,40);
+  ctx.fillRect(x+64,y-4,38,24);
+
+  // Patas animadas
+  let paso=Math.sin(frame*0.15)*5;
+  ctx.fillRect(x+35,y+52+paso,13,15);
+  ctx.fillRect(x+70,y+52-paso,13,15);
+
+  // Ojo
+  ctx.fillStyle="white";
+  ctx.beginPath();
+  ctx.arc(x+92,y+6,5,0,7);
+  ctx.fill();
+
+  ctx.fillStyle="black";
+  ctx.beginPath();
+  ctx.arc(x+94,y+6,2,0,7);
+  ctx.fill();
+}
