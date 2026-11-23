@@ -1,0 +1,422 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>¡Escapa del Dinosaurio!</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#17243a;
+ font-family:Arial,sans-serif;
+ display:flex;justify-content:center;align-items:center;
+ min-height:100vh;overflow:hidden;
+}
+#ventana{
+ width:min(94vw,430px);
+ background:white;border-radius:18px;
+ overflow:hidden;box-shadow:0 10px 30px #0008;
+}
+#barra{
+ background:#ff791e;color:white;
+ padding:12px;text-align:center;
+ font-weight:bold;touch-action:none;cursor:grab;
+}
+canvas{
+ width:100%;display:block;
+ background:#a9e7ff;touch-action:manipulation;
+}
+#botones{
+ display:flex;justify-content:center;
+ flex-wrap:wrap;gap:8px;padding:12px;
+}
+button{
+ border:0;border-radius:12px;padding:12px 14px;
+ background:#ff791e;color:white;
+ font-size:14px;font-weight:bold;
+}
+#info{
+ text-align:center;font-size:12px;
+ color:#555;padding:5px 10px 12px;
+}
+</style>
+</head>
+<body>
+<div id="ventana">
+ <div id="barra">🦖 ¡ESCAPA DEL DINOSAURIO! ↔</div>
+ <canvas id="juego" width="430" height="430"></canvas>
+ <div id="botones">
+  <button id="saltar">⬆ SALTAR</button>
+  <button id="pausa">⏸ PAUSA</button>
+  <button id="reiniciar">🔄 REINICIAR</button>
+ </div>
+ <div id="info">Salta los carros, recoge monedas y escapa.</div>
+</div>
+
+<script>
+const canvas=document.getElementById("juego");
+const ctx=canvas.getContext("2d");
+
+const colores=["#2784ec","#e44b9a","#27a77c","#a45be8"];
+let jugador,carros,monedas;
+let puntos=0,oro=0,velocidad=3;
+let estado="inicio",nivel=1,record=0;
+let frame=0,personaje=0,raf=null,audio=null;
+
+try{
+ record=Number(localStorage.getItem("recordDino")||0);
+ oro=Number(localStorage.getItem("monedasDino")||0);
+ personaje=Number(localStorage.getItem("personajeDino")||0);
+}catch(e){}
+
+function sonido(f=500,d=.1){
+ try{
+  audio=audio||new(window.AudioContext||window.webkitAudioContext)();
+  if(audio.state==="suspended")audio.resume();
+  let o=audio.createOscillator(),g=audio.createGain();
+  o.connect(g);g.connect(audio.destination);
+  o.frequency.value=f;g.gain.value=.07;
+  o.start();
+  g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+d);
+  o.stop(audio.currentTime+d);
+ }catch(e){}
+}
+
+function iniciar(){
+ jugador={x:115,y:295,vy:0,salto:false,w:30,h:55};
+ carros=[];monedas=[];
+ puntos=0;frame=0;velocidad=3;
+ nivel=1;estado="jugando";
+ bucle();
+}
+
+function saltar(){
+ if(estado==="inicio"){iniciar();return}
+ if(estado!=="jugando")return;
+ if(!jugador.salto){
+  jugador.vy=-15;
+  jugador.salto=true;
+  sonido(650);
+ }
+}
+
+function pausar(){
+ if(estado==="jugando"){
+  estado="pausa";
+ }else if(estado==="pausa"){
+  estado="jugando";
+  bucle();
+ }
+ dibujar();
+}
+
+function reiniciar(){iniciar()}
+
+document.getElementById("saltar").onclick=saltar;
+document.getElementById("pausa").onclick=pausar;
+document.getElementById("reiniciar").onclick=reiniciar;
+
+function dibujarDino(){
+ // Dinosaurio más atrás del personaje
+ let x=-5,y=290;
+ ctx.fillStyle="#ff7900";
+
+ // Cola
+ ctx.beginPath();
+ ctx.moveTo(x+30,y+35);
+ ctx.lineTo(x,y+20);
+ ctx.lineTo(x+28,y+52);
+ ctx.fill();
+
+ // Cuerpo
+ ctx.fillRect(x+25,y+20,60,40);
+
+ // Cuello y cabeza
+ ctx.fillRect(x+65,y,24,40);
+ ctx.fillRect(x+64,y-4,38,24);
+
+ // Patas
+ ctx.fillRect(x+35,y+52,13,15);
+ ctx.fillRect(x+70,y+52,13,15);
+
+ // Ojo
+ ctx.fillStyle="white";
+ ctx.beginPath();
+ ctx.arc(x+92,y+6,5,0,7);
+ ctx.fill();
+
+ ctx.fillStyle="black";
+ ctx.beginPath();
+ ctx.arc(x+94,y+6,2,0,7);
+ ctx.fill();
+}
+
+function dibujarJugador(){
+ ctx.fillStyle=colores[personaje];
+ ctx.fillRect(jugador.x+5,jugador.y+20,22,28);
+
+ ctx.fillStyle="#ffd0a1";
+ ctx.beginPath();
+ ctx.arc(jugador.x+16,jugador.y+12,12,0,7);
+ ctx.fill();
+
+ ctx.fillStyle="#333";
+ ctx.fillRect(jugador.x+6,jugador.y+3,20,6);
+
+ ctx.strokeStyle="#222";
+ ctx.lineWidth=5;
+ ctx.beginPath();
+ ctx.moveTo(jugador.x+10,jugador.y+47);
+ ctx.lineTo(jugador.x+5,jugador.y+55);
+ ctx.moveTo(jugador.x+22,jugador.y+47);
+ ctx.lineTo(jugador.x+28,jugador.y+55);
+ ctx.stroke();
+}
+
+function dibujarCarro(c){
+ ctx.fillStyle=c.color;
+ ctx.fillRect(c.x,c.y,68,30);
+
+ ctx.fillStyle="#333";
+ ctx.fillRect(c.x+12,c.y-15,43,17);
+
+ ctx.fillStyle="#c8f3ff";
+ ctx.fillRect(c.x+18,c.y-12,13,11);
+ ctx.fillRect(c.x+35,c.y-12,13,11);
+
+ ctx.fillStyle="#222";
+ ctx.beginPath();
+ ctx.arc(c.x+14,c.y+30,8,0,7);
+ ctx.arc(c.x+54,c.y+30,8,0,7);
+ ctx.fill();
+}
+
+function dibujarMoneda(m){
+ ctx.fillStyle="#f4a900";
+ ctx.beginPath();
+ ctx.arc(m.x,m.y,11,0,7);
+ ctx.fill();
+
+ ctx.strokeStyle="#fff27a";
+ ctx.lineWidth=3;
+ ctx.stroke();
+
+ ctx.fillStyle="white";
+ ctx.font="bold 12px Arial";
+ ctx.fillText("$",m.x-4,m.y+4);
+}
+
+function fondo(){
+ ctx.fillStyle="#a9e7ff";
+ ctx.fillRect(0,0,430,430);
+
+ ctx.fillStyle="white";
+ ctx.beginPath();
+ ctx.arc(100,65,20,0,7);
+ ctx.arc(125,65,26,0,7);
+ ctx.arc(150,65,19,0,7);
+ ctx.fill();
+
+ ctx.fillStyle="#67bd4b";
+ ctx.fillRect(0,350,430,80);
+
+ ctx.fillStyle="#555";
+ ctx.fillRect(0,365,430,65);
+
+ ctx.fillStyle="white";
+ for(let i=0;i<6;i++){
+  ctx.fillRect((i*100-frame*velocidad%100),395,45,5);
+ }
+}
+
+function texto(t,y,tam=25){
+ ctx.fillStyle="#222";
+ ctx.font="bold "+tam+"px Arial";
+ ctx.textAlign="center";
+ ctx.fillText(t,215,y);
+ ctx.textAlign="left";
+}
+
+function dibujar(){
+ fondo();
+ dibujarDino();
+
+ carros.forEach(dibujarCarro);
+ monedas.forEach(dibujarMoneda);
+
+ if(jugador)dibujarJugador();
+
+ ctx.fillStyle="#222";
+ ctx.font="bold 17px Arial";
+ ctx.fillText("⭐ "+Math.floor(puntos/5),15,28);
+ ctx.fillText("🪙 "+oro,15,52);
+ ctx.fillText("🏆 "+record,320,28);
+ ctx.fillText("NIVEL "+nivel,320,52);
+
+ if(estado==="inicio"){
+  ctx.fillStyle="#0009";
+  ctx.fillRect(0,0,430,430);
+  ctx.fillStyle="white";
+  texto("¡ESCAPA DEL",185,31);
+  texto("DINOSAURIO!",225,31);
+  texto("TOCA PARA EMPEZAR",275,19);
+  texto("🦖 ¡CORRE!",320,22);
+ }
+
+ if(estado==="pausa"){
+  ctx.fillStyle="#0009";
+  ctx.fillRect(0,0,430,430);
+  ctx.fillStyle="white";
+  texto("JUEGO EN PAUSA",210,29);
+  texto("Pulsa PAUSA para seguir",250,17);
+ }
+
+ if(estado==="fin"){
+  ctx.fillStyle="#000b";
+  ctx.fillRect(0,0,430,430);
+  ctx.fillStyle="white";
+  texto("¡TE ATRAPARON!",190,29);
+  texto("Puntos: "+Math.floor(puntos/5),235,22);
+  texto("Monedas: "+oro,270,20);
+  texto("Pulsa REINICIAR",320,19);
+ }
+}
+
+function terminar(){
+ estado="fin";
+ sonido(130,.5);
+
+ if(Math.floor(puntos/5)>record){
+  record=Math.floor(puntos/5);
+  try{
+   localStorage.setItem("recordDino",record);
+  }catch(e){}
+ }
+ dibujar();
+}
+
+function bucle(){
+ if(estado!=="jugando")return;
+
+ frame++;
+ puntos++;
+
+ nivel=puntos<1000?1:puntos<2500?2:3;
+ velocidad=2.7+nivel*.45+Math.min(puntos/3000,1);
+
+ // Física del salto
+ jugador.y+=jugador.vy;
+ jugador.vy+=.65;
+
+ if(jugador.y>=295){
+  jugador.y=295;
+  jugador.vy=0;
+  jugador.salto=false;
+ }
+
+ // Carros: aparecen mucho menos seguido
+ if(frame%Math.max(100,Math.floor(190-nivel*15))===0){
+  carros.push({
+   x:440,
+   y:320,
+   color:["#e53935","#2464db","#f6bb24","#333","#8e44ad"][Math.floor(Math.random()*5)]
+  });
+ }
+
+ // Monedas
+ if(frame%100===0){
+  monedas.push({x:440,y:260+Math.random()*35});
+ }
+
+ carros.forEach(c=>c.x-=velocidad);
+ monedas.forEach(m=>m.x-=velocidad);
+
+ carros=carros.filter(c=>c.x>-90);
+ monedas=monedas.filter(m=>m.x>-30);
+
+ // Colisiones más precisas
+ for(let c of carros){
+  const tocaCarro=
+   jugador.x+27>c.x+5 &&
+   jugador.x+5<c.x+63 &&
+   jugador.y+55>c.y &&
+   jugador.y<c.y+30;
+
+  if(tocaCarro){
+   terminar();
+   return;
+  }
+ }
+
+ // Recoger monedas
+ monedas=monedas.filter(m=>{
+  if(Math.abs(jugador.x+15-m.x)<27 &&
+     Math.abs(jugador.y+25-m.y)<35){
+   oro++;
+   sonido(950,.12);
+   try{
+    localStorage.setItem("monedasDino",oro);
+   }catch(e){}
+   return false;
+  }
+  return true;
+ });
+
+ dibujar();
+ raf=requestAnimationFrame(bucle);
+}
+
+// Cambiar personaje usando monedas
+document.getElementById("info").onclick=()=>{
+ if(oro>=10){
+  oro-=10;
+  personaje=(personaje+1)%colores.length;
+  try{
+   localStorage.setItem("monedasDino",oro);
+   localStorage.setItem("personajeDino",personaje);
+  }catch(e){}
+  dibujar();
+  sonido(800);
+  document.getElementById("info").innerText=
+   "¡Personaje cambiado! Ahora eres "+["Azul","Rosa","Verde","Morado"][personaje]+".";
+ }else{
+  document.getElementById("info").innerText=
+   "Necesitas 10 monedas para cambiar de personaje. Tienes "+oro+".";
+ }
+};
+
+document.getElementById("info").style.cursor="pointer";
+
+// Mover la ventana
+let ventana=document.getElementById("ventana");
+let barra=document.getElementById("barra");
+let mov=false,dx=0,dy=0;
+
+barra.addEventListener("pointerdown",e=>{
+ mov=true;
+ let r=ventana.getBoundingClientRect();
+ dx=e.clientX-r.left;
+ dy=e.clientY-r.top;
+ barra.setPointerCapture(e.pointerId);
+});
+
+barra.addEventListener("pointermove",e=>{
+ if(!mov)return;
+ ventana.style.position="fixed";
+ ventana.style.left=Math.max(0,Math.min(innerWidth-ventana.offsetWidth,e.clientX-dx))+"px";
+ ventana.style.top=Math.max(0,Math.min(innerHeight-ventana.offsetHeight,e.clientY-dy))+"px";
+});
+
+barra.addEventListener("pointerup",()=>mov=false);
+barra.addEventListener("pointercancel",()=>mov=false);
+
+// Inicio
+canvas.addEventListener("pointerdown",()=>{
+ if(estado==="inicio")iniciar();
+});
+
+dibujar();
+</script>
+</body>
+</html>
